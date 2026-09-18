@@ -1,0 +1,119 @@
+[
+  {
+    "key": "moodle::19090",
+    "title": "Turnitin Report Generation (Plagiarism/similarity should be at a 25% max)",
+    "course": "ICS 2204: ICS Project I (3A, 3B, 3C, &amp; 3D) April - July 2026",
+    "source": "moodle",
+    "reason": "group",
+    "note": "",
+    "date": "2026-09-12"
+  },
+  {
+    "key": "moodle::19979",
+    "title": "Group D- Lab 3.4.6 submit here (Groupwork-Due Monday 14th 5.15Pm)",
+    "course": "ICS2203 - Advanced Networking (Aug-Dec 2026)",
+    "source": "moodle",
+    "reason": "partial",
+    "note": "",
+    "date": "2026-09-14"
+  },
+  {
+    "key": "moodle::19978",
+    "title": "Group E- Lab 3.4.6 submit here (Groupwork-Due Monday 14th 10.15am)",
+    "course": "ICS2203 - Advanced Networking (Aug-Dec 2026)",
+    "source": "moodle",
+    "reason": "other",
+    "note": "Not my class",
+    "date": "2026-09-14"
+  },
+  {
+    "key": "moodle::19985",
+    "title": "Group A - Project Deliverable 1",
+    "course": "ICS3202: Artificial Intelligence [Aug - Dec 2026 ~ ICS 3.2A, 3.2B, 3.2C, 3.2D &amp; 3.2E]",
+    "source": "moodle",
+    "reason": "other",
+    "note": "",
+    "date": "2026-09-15"
+  },
+  {
+    "key": "moodle::16184",
+    "title": "Group A - Practical Exercise 2: Data Cleaning",
+    "course": "ICS3202: Artificial Intelligence [Aug - Dec 2026 ~ ICS 3.2A, 3.2B, 3.2C, 3.2D &amp; 3.2E]",
+    "source": "moodle",
+    "reason": "other",
+    "note": "",
+    "date": "2026-09-15"
+  },
+  {
+    "key": "moodle::19984",
+    "title": "Group E - Practical Exercise 2: Data Cleaning",
+    "course": "ICS3202: Artificial Intelligence [Aug - Dec 2026 ~ ICS 3.2A, 3.2B, 3.2C, 3.2D &amp; 3.2E]",
+    "source": "moodle",
+    "reason": "other",
+    "note": "",
+    "date": "2026-09-15"
+  },
+  {
+    "key": "moodle::19988",
+    "title": "Group C - Project Deliverable 1",
+    "course": "ICS3202: Artificial Intelligence [Aug - Dec 2026 ~ ICS 3.2A, 3.2B, 3.2C, 3.2D &amp; 3.2E]",
+    "source": "moodle",
+    "reason": "other",
+    "note": "",
+    "date": "2026-09-15"
+  },
+  {
+    "key": "moodle::19982",
+    "title": "Group C - Practical Exercise 2: Data Cleaning",
+    "course": "ICS3202: Artificial Intelligence [Aug - Dec 2026 ~ ICS 3.2A, 3.2B, 3.2C, 3.2D &amp; 3.2E]",
+    "source": "moodle",
+    "reason": "other",
+    "note": "",
+    "date": "2026-09-15"
+  },
+  {
+    "key": "moodle::19981",
+    "title": "Group B - Practical Exercise 2: Data Cleaning",
+    "course": "ICS3202: Artificial Intelligence [Aug - Dec 2026 ~ ICS 3.2A, 3.2B, 3.2C, 3.2D &amp; 3.2E]",
+    "source": "moodle",
+    "reason": "other",
+    "note": "",
+    "date": "2026-09-15"
+  },
+  {
+    "key": "moodle::19986",
+    "title": "Group E - Project Deliverable 1",
+    "course": "ICS3202: Artificial Intelligence [Aug - Dec 2026 ~ ICS 3.2A, 3.2B, 3.2C, 3.2D &amp; 3.2E]",
+    "source": "moodle",
+    "reason": "other",
+    "note": "",
+    "date": "2026-09-15"
+  },
+  {
+    "key": "moodle::19989",
+    "title": "Group B - Project Deliverable 1",
+    "course": "ICS3202: Artificial Intelligence [Aug - Dec 2026 ~ ICS 3.2A, 3.2B, 3.2C, 3.2D &amp; 3.2E]",
+    "source": "moodle",
+    "reason": "other",
+    "note": "",
+    "date": "2026-09-15"
+  },
+  {
+    "key": "classroom::875127827374::885585462329",
+    "title": "France Telecom Suicides",
+    "course": "Business Ethics",
+    "source": "classroom",
+    "reason": "api",
+    "note": "",
+    "date": "2026-09-17"
+  },
+  {
+    "key": "moodle::19987",
+    "title": "Group D - Project Deliverable 1",
+    "course": "ICS3202: Artificial Intelligence [Aug - Dec 2026 ~ ICS 3.2A, 3.2B, 3.2C, 3.2D &amp; 3.2E]",
+    "source": "moodle",
+    "reason": "group",
+    "note": "",
+    "date": "2026-09-18"
+  }
+]
