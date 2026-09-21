@@ -1,173 +1,144 @@
-import os
 import datetime
+import os
 import tkinter as tk
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
+from pathlib import Path
 from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
-
-BASE_DIR = r"C:\Users\glori\OneDrive\Documents\GitHub\Assignment Checker"
-CREDS_FILE = os.path.join(BASE_DIR, "credentials.json")
-TOKEN_FILE = os.path.join(BASE_DIR, "token.json")
-
-SCOPES = [
-    'https://www.googleapis.com/auth/classroom.student-submissions.me.readonly',
-    'https://www.googleapis.com/auth/classroom.courses.readonly'
-]
-
-LOCAL_TZ_OFFSET = datetime.timedelta(hours=3)  # Kenya
+from auth_manager import AuthManager
 
 
-def get_credentials():
-    creds = None
-    if os.path.exists(TOKEN_FILE):
-        creds = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            flow = InstalledAppFlow.from_client_secrets_file(CREDS_FILE, SCOPES)
-            creds = flow.run_local_server(port=0)
-        with open(TOKEN_FILE, 'w') as token:
-            token.write(creds.to_json())
-    return creds
+os.environ['OAUTHLIB_RELAX_TOKEN_SCOPE'] = '1'
+
+BASE_DIR = Path(__file__).resolve().parent
 
 
-def get_assignments():
-    """Returns (due_today_list, not_submitted_list)."""
-    creds = get_credentials()
-    service = build('classroom', 'v1', credentials=creds)
+def get_google_classroom_service():
+    """Initializes Google Classroom service using valid session credentials."""
+    auth = AuthManager()
+    creds = auth.get_valid_google_credentials()
+    if not creds:
+        raise PermissionError("Google Account is not connected or token expired.")
+    return build('classroom', 'v1', credentials=creds)
 
-    courses = service.courses().list(courseStates='ACTIVE').execute().get('courses', [])
 
-    local_now = datetime.datetime.now(datetime.timezone.utc) + LOCAL_TZ_OFFSET
-    today_local = local_now.date()
-
-    due_today = []
-    not_submitted = []
+def get_classroom_assignments_due_today():
+    """Fetches Google Classroom assignments due today for the student."""
+    service = get_google_classroom_service()
+    
+    # 1. Fetch active courses
+    courses_result = service.courses().list(studentId='me', courseStates=['ACTIVE']).execute()
+    courses = courses_result.get('courses', [])
+    
+    today = datetime.datetime.now(datetime.timezone.utc).date()
+    assignments_due = []
 
     for course in courses:
         course_id = course['id']
         course_name = course['name']
+        
+        # 2. Fetch coursework
+        work_result = service.courses().courseWork().list(courseId=course_id).execute()
+        coursework = work_result.get('courseWork', [])
 
-        works = service.courses().courseWork().list(
-            courseId=course_id,
-            courseWorkStates='PUBLISHED'
-        ).execute().get('courseWork', [])
-
-        for work in works:
-            if 'dueDate' not in work:
+        for item in coursework:
+            due_date_dict = item.get('dueDate')
+            if not due_date_dict:
                 continue
-
-            dd = work['dueDate']
-            dt = work.get('dueTime', {'hours': 23, 'minutes': 59})
-            due_utc = datetime.datetime(
-                dd['year'], dd['month'], dd['day'],
-                dt.get('hours', 23), dt.get('minutes', 59),
-                tzinfo=datetime.timezone.utc
+                
+            item_date = datetime.date(
+                due_date_dict.get('year'),
+                due_date_dict.get('month'),
+                due_date_dict.get('day')
             )
-            due_local = due_utc + LOCAL_TZ_OFFSET
+            
+            if item_date == today:
+                # 3. Check student submission state
+                submissions_result = service.courses().courseWork().studentSubmissions().list(
+                    courseId=course_id, courseWorkId=item['id'], studentId='me'
+                ).execute()
+                
+                submissions = submissions_result.get('studentSubmissions', [])
+                submitted = False
+                if submissions:
+                    state = submissions[0].get('state')
+                    if state in ['TURNED_IN', 'RETURNED']:
+                        submitted = True
+                        
+                assignments_due.append((course_name, item.get('title', 'Untitled'), submitted))
 
-            if due_local.date() != today_local:
-                continue
-
-            title = work['title']
-            due_today.append((title, course_name))
-
-            subs = service.courses().courseWork().studentSubmissions().list(
-                courseId=course_id,
-                courseWorkId=work['id'],
-                userId='me'
-            ).execute().get('studentSubmissions', [])
-
-            state = subs[0].get('state') if subs else 'NEW'
-            if state not in ('TURNED_IN', 'RETURNED'):
-                not_submitted.append((title, course_name))
-
-    return due_today, not_submitted
+    return assignments_due
 
 
-def show_sticky_note():
+def show_classroom_sticky():
     try:
-        due_today, not_submitted = get_assignments()
+        assignments = get_classroom_assignments_due_today()
         error = None
     except Exception as e:
-        due_today, not_submitted, error = [], [], str(e)
+        assignments, error = [], str(e)
 
     root = tk.Tk()
-    root.title("Assignments")
-    root.overrideredirect(True)          # remove title bar
-    root.attributes("-topmost", True)    # stay above other windows
-    root.configure(bg="#DB8797")         # sticky-note yellow
+    root.title("Google Classroom")
+    root.overrideredirect(True)
+    root.attributes("-topmost", True)
+    root.configure(bg="#FFF8D6")  # Light yellow sticky note
 
-    # Position: top-right corner
-    width, height = 270, 360
+    width, height = 340, 260
     screen_w = root.winfo_screenwidth()
     root.geometry(f"{width}x{height}+{screen_w - width - 30}+60")
 
-    # Header
+    ui_font = ("Cantarell", 10) if os.name != "nt" else ("Segoe UI", 10)
+    bold_font = (ui_font[0], 10, "bold")
+    header_font = (ui_font[0], 12, "bold")
+
     header = tk.Label(
-        root, text="📌 Due Today",
-        bg="#C17B9C", fg="#333",
-        font=("Segoe UI", 12, "bold"),
-        anchor="w", padx=10, pady=6
+        root, text="📌 Google Classroom — Due Today",
+        bg="#FFF8D6", fg="#332200",
+        font=header_font, anchor="w", padx=10, pady=6
     )
     header.pack(fill="x")
 
-    # Date line
     today_str = datetime.datetime.now().strftime("%A, %d %b %Y")
     tk.Label(
-        root, text=today_str,
-        bg="#DB8797", fg="#666",
-        font=("Segoe UI", 9),
-        anchor="w", padx=10
+        root, text=today_str, bg="#FFF8D6", fg="#776644",
+        font=(ui_font[0], 9), anchor="w", padx=10
     ).pack(fill="x")
 
-    tk.Frame(root, bg="#C17B9C", height=1).pack(fill="x", pady=6)
+    tk.Frame(root, bg="#E6D89A", height=1).pack(fill="x", pady=6)
 
-    # Body
-    body = tk.Frame(root, bg="#DB8797")
+    body = tk.Frame(root, bg="#FFF8D6")
     body.pack(fill="both", expand=True, padx=10)
 
     if error:
         tk.Label(
             body, text=f"Error:\n{error}",
-            bg="#DB8797", fg="#900",
-            font=("Segoe UI", 9), wraplength=290, justify="left"
+            bg="#FFF8D6", fg="#900",
+            font=(ui_font[0], 9), wraplength=310, justify="left"
         ).pack(anchor="w")
-    elif not due_today:
+    elif not assignments:
         tk.Label(
             body, text="Nothing due today.\nYou're clear! ✨",
-            bg="#DB8797", fg="#333",
-            font=("Segoe UI", 10), justify="left"
+            bg="#FFF8D6", fg="#332200",
+            font=ui_font, justify="left"
         ).pack(anchor="w", pady=8)
     else:
-        for title, course in due_today:
-            submitted = all(t != title for t, _ in not_submitted)
+        for course_name, title, submitted in assignments:
             mark = "✅" if submitted else "❌"
             tk.Label(
                 body, text=f"{mark} {title}",
-                bg="#DB8797", fg="#222",
-                font=("Segoe UI", 10, "bold"),
-                wraplength=290, justify="left", anchor="w"
+                bg="#FFF8D6", fg="#332200",
+                font=bold_font, wraplength=310, justify="left", anchor="w"
             ).pack(anchor="w", pady=(4, 0))
             tk.Label(
-                body, text=course,
-                bg="#DB8797", fg="#777",
-                font=("Segoe UI", 8),
-                anchor="w"
+                body, text=course_name, bg="#FFF8D6", fg="#776644",
+                font=(ui_font[0], 8), anchor="w"
             ).pack(anchor="w")
 
-    # Close button
     close = tk.Label(
-        root, text="✕", bg="#DB8797", fg="#666",
-        font=("Segoe UI", 11, "bold"), cursor="hand2"
+        root, text="✕", bg="#FFF8D6", fg="#776644",
+        font=(ui_font[0], 11, "bold"), cursor="hand2"
     )
     close.place(relx=1.0, y=4, x=-10, anchor="ne")
     close.bind("<Button-1>", lambda e: root.destroy())
 
-    # Drag anywhere on the note
     def start_move(event):
         root.x = event.x
         root.y = event.y
@@ -184,5 +155,5 @@ def show_sticky_note():
     root.mainloop()
 
 
-if __name__ == '__main__':
-    show_sticky_note()
+if __name__ == "__main__":
+    show_classroom_sticky()

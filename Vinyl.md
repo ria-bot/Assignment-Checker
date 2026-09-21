@@ -21,9 +21,12 @@ It lives in the system tray until you open it.
 
 ### Software
 
-- Windows 10 or 11
+- Windows 10/11, Linux, or macOS
 - Python 3.10 or newer
 - Visual Studio Code (optional)
+
+Linux audio capture requires a PulseAudio-compatible server. PipeWire systems
+usually provide this through the PipeWire PulseAudio compatibility layer.
 
 ### Hardware
 
@@ -35,13 +38,23 @@ No accounts are required.
 
 ## Install Libraries
 
-Open PowerShell and run these commands one at a time. Install order matters: use `winrt`, not the deprecated `winsdk` package.
+Open a terminal and install the Python libraries:
+
+```bash
+python -m pip install numpy
+python -m pip install soundcard pystray pillow
+```
+
+On Linux, install Tkinter and the PulseAudio runtime if they are not already
+present. For Debian or Ubuntu:
+
+```bash
+sudo apt install python3-tk libpulse0
+```
+
+On Windows, the optional now-playing metadata support additionally uses:
 
 ```powershell
-python -m pip install numpy
-python -m pip install PyAudioWPatch
-python -m pip install pycaw
-python -m pip install pystray pillow
 python -m pip install winrt-Windows.Media.Control
 python -m pip install winrt-Windows.Foundation
 python -m pip install winrt-Windows.Foundation.Collections
@@ -50,46 +63,42 @@ python -m pip install winrt-Windows.Foundation.Collections
 | Library | Purpose |
 |---|---|
 | `numpy` | Performs FFT calculations on audio samples. |
-| `PyAudioWPatch` | Captures system audio with WASAPI loopback. |
-| `pycaw` | Provides fallback playback-state detection. |
+| `soundcard` | Captures speaker output through loopback on Windows, Linux, and macOS. |
 | `pystray` and `pillow` | Create the system tray icon. |
-| `winrt-Windows.Media.Control` | Reads now-playing title and artist. |
-| `winrt-Windows.Foundation` and `.Collections` | Required WinRT dependencies. |
+| `winrt-Windows.*` | Optionally reads now-playing title and artist on Windows. |
 
-If a WinRT installation fails because another `winrt-windows-*` module is missing, install the named module and re-run the command. Do not install `winsdk`; it is deprecated and may require C++ build tools on modern Python.
+The visualizer still works without WinRT, but the track title and artist will
+not be shown. Do not install the deprecated `winsdk` package.
 
 ---
 
 ## Find Your Loopback Device
 
-Audio output devices, including speakers, headphones, and HDMI monitors, expose a loopback device the visualizer can monitor. Run:
+Audio output devices, including speakers, headphones, and HDMI monitors, expose
+a loopback device the visualizer can monitor. The app displays available
+loopback devices when it starts; choose the output where music is playing.
 
-```powershell
-python -m pyaudiowpatch
+On Linux, you can inspect available PulseAudio/PipeWire devices with:
+
+```bash
+pactl list short sources
 ```
 
-Look for entries ending in `[Loopback]`, such as:
+Look for a monitor source, such as:
 
 ```text
-[13] 1 - ASUS VS228 [Loopback]
-[14] Speaker (Realtek(R) Audio) [Loopback]
+alsa_output.pci-0000_00_1f.3.analog-stereo.monitor
 ```
 
-Record the bracketed index. Use the loopback matching the output device where music plays. You may need to select a different device after plugging in headphones or switching to monitor speakers.
+The exact name varies by system. You may need to choose a different device
+after plugging in headphones or switching to monitor speakers.
 
 ---
 
 ## Configure the Device
 
-At the bottom of `vinyl.py`, set the loopback index:
-
-```python
-if __name__ == "__main__":
-	REALTEK_LOOPBACK_INDEX = 14
-	VinylWindow(device_index=REALTEK_LOOPBACK_INDEX).run()
-```
-
-Replace `14` with your loopback device index. If unsure, test it first; if the visualizer does not react, try another loopback index from the device list.
+No device index needs to be edited in `vinyl.py`. Select the active output in
+the picker shown at startup, or use **Change device** in the tray menu.
 
 ---
 
@@ -98,7 +107,8 @@ Replace `14` with your loopback device index. If unsure, test it first; if the v
 ```text
 Assignment Checker/
 |-- vinyl.py
-`-- Vinyl.md
+|-- Vinyl.md
+`-- requirements.txt
 ```
 
 No accounts, tokens, or configuration files are needed beyond the audio device index in `vinyl.py`.
@@ -111,7 +121,7 @@ No accounts, tokens, or configuration files are needed beyond the audio device i
 
 Open a terminal in the project folder and run:
 
-```powershell
+```bash
 python vinyl.py
 ```
 
@@ -197,9 +207,9 @@ For example, use `10.0` for more sensitivity or `20.0` for less.
 
 | Problem | Fix |
 |---|---|
-| `ModuleNotFoundError: pyaudiowpatch` | Run `python -m pip install PyAudioWPatch`. |
-| `ModuleNotFoundError: winrt.windows.foundation` | Run `python -m pip install winrt-Windows.Foundation winrt-Windows.Foundation.Collections`. |
-| No WASAPI loopback device | Run `python -m pyaudiowpatch` and try another listed loopback index. |
+| `ModuleNotFoundError: soundcard` | Run `python -m pip install soundcard`. |
+| `ModuleNotFoundError: tkinter` | Install the OS Tkinter package, for example `sudo apt install python3-tk` on Debian/Ubuntu. |
+| No loopback device | Check that PulseAudio or PipeWire is running and that a monitor source exists. |
 | Visualizer does not react to music | Use the loopback index for the active audio output. |
 | Ripples barely move | Increase sensitivity in `bass_level` as described above. |
 | No track title | Some playback apps do not provide a Windows media session; try Spotify desktop or focus the browser tab playing media. |
@@ -217,8 +227,7 @@ The application listens only to your computer's audio output. It does not access
 
 ## Credits
 
-- [PyAudioWPatch](https://github.com/s0d3s/PyAudioWPatch)
-- [pycaw](https://github.com/AndreMiras/pycaw)
+- [SoundCard](https://github.com/bastibe/SoundCard)
 - [pywinrt](https://github.com/pywinrt/pywinrt)
 - [numpy](https://numpy.org/)
 - [pystray](https://github.com/moses-palmer/pystray)
