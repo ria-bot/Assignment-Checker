@@ -7,7 +7,7 @@ from tkinter import messagebox
 from PIL import Image, ImageDraw
 import pystray
 
-BASE_DIR = r"C:\Users\glori\OneDrive\Documents\GitHub\Assignment Checker"
+BASE_DIR = r"/home/topsy/Documents/Assignment-Checker"
 CODES_FILE = os.path.join(BASE_DIR, "teams_codes.txt")
 
 HIDE_AFTER_JOIN = True  # set False if you want the window to stay open after clicking

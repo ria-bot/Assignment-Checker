@@ -1,58 +1,73 @@
-import os
 import datetime
+import os
 import tkinter as tk
-import urllib.parse
-import urllib.request
-import json
+from pathlib import Path
+import requests
+from auth_manager import AuthManager
 
-BASE_DIR = r"C:\Users\glori\OneDrive\Documents\GitHub\Assignment Checker"
-TOKEN_FILE = os.path.join(BASE_DIR, "moodle_token.txt")
-
+BASE_DIR = Path(__file__).resolve().parent
 MOODLE_URL = "https://elearning.strathmore.edu/webservice/rest/server.php"
-USERID = 57548
-LOCAL_TZ_OFFSET = datetime.timedelta(hours=3)  # Kenya
+LOCAL_TZ_OFFSET = datetime.timedelta(hours=3)  # Kenya (EAT)
 
 
-def load_token():
-    with open(TOKEN_FILE, "r", encoding="utf-8") as f:
-        return f.read().strip()
+def get_moodle_token() -> str:
+    """Loads the decrypted Moodle web service token from the active session."""
+    auth = AuthManager()
+    session = auth.load_session()
+    token = session.get("moodle")
+    if not token:
+        raise FileNotFoundError("No active eLearning session found. Please log in first.")
+    return token
 
 
-def call_moodle(token, function, **params):
-    """Generic Moodle REST call."""
+def call_moodle(token: str, function: str, **params) -> dict | list:
+    """Generic Moodle REST API call."""
+    headers = {
+        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) StrathmoreAssignmentHub/1.0"
+    }
     query = {
         "wstoken": token,
         "wsfunction": function,
         "moodlewsrestformat": "json",
     }
     query.update(params)
-    url = MOODLE_URL + "?" + urllib.parse.urlencode(query)
-    with urllib.request.urlopen(url, timeout=20) as r:
-        return json.loads(r.read().decode("utf-8"))
+    
+    response = requests.get(MOODLE_URL, params=query, headers=headers, timeout=15)
+    response.raise_for_status()
+    data = response.json()
+    
+    if isinstance(data, dict) and data.get("exception"):
+        raise RuntimeError(data.get("message", "Moodle API Error"))
+        
+    return data
 
 
-def get_assignments_due_today(token):
+def get_user_id(token: str) -> int:
+    """Dynamically retrieves authenticated user's numeric ID from Moodle."""
+    site_info = call_moodle(token, "core_webservice_get_site_info")
+    if "userid" in site_info:
+        return site_info["userid"]
+    raise ValueError("Could not retrieve user ID from site info.")
+
+
+def get_assignments_due_today(token: str) -> list[tuple[str, str, bool]]:
     """Returns list of (course_name, assignment_name, submitted_bool) for today."""
+    user_id = get_user_id(token)
+
     local_now = datetime.datetime.now(datetime.timezone.utc) + LOCAL_TZ_OFFSET
     today_start = datetime.datetime.combine(local_now.date(), datetime.time.min)
     today_end = today_start + datetime.timedelta(days=1)
 
-    # Convert to UTC unix timestamps (Moodle uses UTC)
     start_ts = int((today_start - LOCAL_TZ_OFFSET).timestamp())
     end_ts = int((today_end - LOCAL_TZ_OFFSET).timestamp())
 
-    # 1. Get enrolled courses
-    courses = call_moodle(token, "core_enrol_get_users_courses", userid=USERID)
-    if isinstance(courses, dict) and courses.get("exception"):
-        raise RuntimeError(courses.get("message", "Moodle error"))
-
+    courses = call_moodle(token, "core_enrol_get_users_courses", userid=user_id)
     results = []
 
     for course in courses:
         course_id = course["id"]
         course_name = course["fullname"]
 
-        # 2. Get assignments in this course
         data = call_moodle(
             token, "mod_assign_get_assignments", **{"courseids[0]": course_id}
         )
@@ -62,12 +77,9 @@ def get_assignments_due_today(token):
         for c in data["courses"]:
             for a in c.get("assignments", []):
                 due = a.get("duedate", 0)
-                if not due:
-                    continue
-                if not (start_ts <= due < end_ts):
+                if not due or not (start_ts <= due < end_ts):
                     continue
 
-                # 3. Check submission state
                 sub = call_moodle(
                     token,
                     "mod_assign_get_submissions",
@@ -77,9 +89,8 @@ def get_assignments_due_today(token):
                 try:
                     for s_course in sub.get("assignments", []):
                         for s in s_course.get("submissions", []):
-                            if s.get("userid") == USERID:
-                                status = s.get("status", "")
-                                if status == "submitted":
+                            if s.get("userid") == user_id:
+                                if s.get("status") == "submitted":
                                     submitted = True
                 except Exception:
                     pass
@@ -89,9 +100,9 @@ def get_assignments_due_today(token):
     return results
 
 
-def show_sticky_note():
+def show_elearning_sticky():
     try:
-        token = load_token()
+        token = get_moodle_token()
         assignments = get_assignments_due_today(token)
         error = None
     except Exception as e:
@@ -101,25 +112,27 @@ def show_sticky_note():
     root.title("eLearning")
     root.overrideredirect(True)
     root.attributes("-topmost", True)
-    root.configure(bg="#D8ECFF")  # light blue to distinguish from Classroom
+    root.configure(bg="#D8ECFF")
 
     width, height = 340, 280
     screen_w = root.winfo_screenwidth()
-    # Place it below the Classroom sticky (which is at +60)
     root.geometry(f"{width}x{height}+{screen_w - width - 30}+340")
+
+    ui_font = ("Cantarell", 10) if os.name != "nt" else ("Segoe UI", 10)
+    bold_font = (ui_font[0], 10, "bold")
+    header_font = (ui_font[0], 12, "bold")
 
     header = tk.Label(
         root, text="📚 eLearning — Due Today",
         bg="#D8ECFF", fg="#123",
-        font=("Segoe UI", 12, "bold"),
-        anchor="w", padx=10, pady=6
+        font=header_font, anchor="w", padx=10, pady=6
     )
     header.pack(fill="x")
 
     today_str = datetime.datetime.now().strftime("%A, %d %b %Y")
     tk.Label(
         root, text=today_str, bg="#D8ECFF", fg="#567",
-        font=("Segoe UI", 9), anchor="w", padx=10
+        font=(ui_font[0], 9), anchor="w", padx=10
     ).pack(fill="x")
 
     tk.Frame(root, bg="#A8C8E8", height=1).pack(fill="x", pady=6)
@@ -131,13 +144,13 @@ def show_sticky_note():
         tk.Label(
             body, text=f"Error:\n{error}",
             bg="#D8ECFF", fg="#900",
-            font=("Segoe UI", 9), wraplength=310, justify="left"
+            font=(ui_font[0], 9), wraplength=310, justify="left"
         ).pack(anchor="w")
     elif not assignments:
         tk.Label(
             body, text="Nothing due today.\nYou're clear! ✨",
             bg="#D8ECFF", fg="#234",
-            font=("Segoe UI", 10), justify="left"
+            font=ui_font, justify="left"
         ).pack(anchor="w", pady=8)
     else:
         for course_name, title, submitted in assignments:
@@ -145,17 +158,16 @@ def show_sticky_note():
             tk.Label(
                 body, text=f"{mark} {title}",
                 bg="#D8ECFF", fg="#123",
-                font=("Segoe UI", 10, "bold"),
-                wraplength=310, justify="left", anchor="w"
+                font=bold_font, wraplength=310, justify="left", anchor="w"
             ).pack(anchor="w", pady=(4, 0))
             tk.Label(
                 body, text=course_name, bg="#D8ECFF", fg="#678",
-                font=("Segoe UI", 8), anchor="w"
+                font=(ui_font[0], 8), anchor="w"
             ).pack(anchor="w")
 
     close = tk.Label(
         root, text="✕", bg="#D8ECFF", fg="#567",
-        font=("Segoe UI", 11, "bold"), cursor="hand2"
+        font=(ui_font[0], 11, "bold"), cursor="hand2"
     )
     close.place(relx=1.0, y=4, x=-10, anchor="ne")
     close.bind("<Button-1>", lambda e: root.destroy())
@@ -177,4 +189,4 @@ def show_sticky_note():
 
 
 if __name__ == "__main__":
-    show_sticky_note()
+    show_elearning_sticky()

@@ -4,10 +4,10 @@ import threading
 import asyncio
 import tkinter as tk
 import colorsys
+import platform
 
 import numpy as np
-import pyaudiowpatch as pyaudio
-from pycaw.pycaw import AudioUtilities
+import soundcard as sc
 
 from PIL import Image, ImageDraw
 import pystray
@@ -32,10 +32,25 @@ SMOOTHING = 0.35
 BASS_BOOST = 1.6
 BG_COLOR = "#AB6422"
 
+def play_alert():
+    if platform.system() == "Windows":
+        import winsound
+        winsound.Beep(1000, 500)
+    else:
+        # Cross-platform fallback using the system audio player
+        import os
+        os.system("paplay /usr/share/sounds/freedesktop/stereo/complete.oga 2>/dev/null || speaker-test -t sine -f 1000 -l 1 >/dev/null 2>&1")
+
 
 # ---------- Device picker ----------
-def pick_loopback_device(p):
-    loopbacks = list(p.get_loopback_device_info_generator())
+def pick_loopback_device():
+    microphones = list(sc.all_microphones(include_loopback=True))
+    loopbacks = [microphone for microphone in microphones if getattr(microphone, "isloopback", False)]
+    if not loopbacks:
+        try:
+            loopbacks = [sc.default_speaker().get_microphone()] 
+        except Exception:
+            loopbacks = []
     if not loopbacks:
         return None
 
@@ -61,10 +76,10 @@ def pick_loopback_device(p):
 
     def make_picker(info):
         def on_pick():
-            chosen["index"] = info["index"]
+            chosen["microphone"] = info
             dlg.destroy()
 
-        name = info["name"].replace(" [Loopback]", "")
+        name = info.name
         btn = tk.Label(
             dlg, text=f"▶  {name}",
             bg="#2A2A2A", fg="#EAEAEA",
@@ -82,7 +97,7 @@ def pick_loopback_device(p):
         make_picker(info)
 
     dlg.mainloop()
-    return chosen["index"]
+    return chosen["microphone"]
 
 
 # ---------- Audio capture ----------
@@ -91,50 +106,42 @@ class AudioCapture:
         self.blocksize = blocksize
         self.buffer = np.zeros(blocksize, dtype=np.float32)
         self.lock = threading.Lock()
-        self.stream = None
-        self.p = None
+        self.recorder = None
+        self._stop = threading.Event()
+        self._thread = None
 
-    def _callback(self, in_data, frame_count, time_info, status):
-        audio_data = np.frombuffer(in_data, dtype=np.float32)
-        if audio_data.size > 0:
-            if audio_data.ndim == 1 and audio_data.size % 2 == 0:
-                mono = audio_data.reshape(-1, 2).mean(axis=1)
-            else:
-                mono = audio_data
-            if len(mono) >= self.blocksize:
-                mono = mono[:self.blocksize]
-            else:
-                mono = np.pad(mono, (0, self.blocksize - len(mono)))
-            with self.lock:
-                self.buffer = mono
-        return (in_data, pyaudio.paContinue)
+    def _record_loop(self):
+        try:
+            with self.recorder:
+                while not self._stop.is_set():
+                    audio_data = np.asarray(self.recorder.record(self.blocksize), dtype=np.float32)
+                    if audio_data.ndim > 1:
+                        audio_data = audio_data.mean(axis=1)
+                    if len(audio_data) >= self.blocksize:
+                        mono = audio_data[:self.blocksize]
+                    else:
+                        mono = np.pad(audio_data, (0, self.blocksize - len(audio_data)))
+                    with self.lock:
+                        self.buffer = mono
+        except Exception as error:
+            print(f"Audio capture stopped: {error}")
 
-    def start(self, device_index):
-        self.p = pyaudio.PyAudio()
-        info = self.p.get_device_info_by_index(device_index)
-        print(f"Using device: {info['name']}")
-
-        self.stream = self.p.open(
-            format=pyaudio.paFloat32,
-            channels=info["maxInputChannels"],
-            rate=int(info["defaultSampleRate"]),
-            input=True,
-            input_device_index=info["index"],
-            frames_per_buffer=self.blocksize,
-            stream_callback=self._callback,
-        )
-        self.stream.start_stream()
+    def start(self, microphone):
+        print(f"Using device: {microphone.name}")
+        self._stop.clear()
+        self.recorder = microphone.recorder(samplerate=44100, channels=2)
+        self._thread = threading.Thread(target=self._record_loop, daemon=True)
+        self._thread.start()
 
     def read(self):
         with self.lock:
             return self.buffer.copy()
 
     def stop(self):
-        if self.stream:
-            self.stream.stop_stream()
-            self.stream.close()
-        if self.p:
-            self.p.terminate()
+        self._stop.set()
+        if self._thread and self._thread is not threading.current_thread():
+            self._thread.join(timeout=1)
+        self.recorder = None
 
 
 # ---------- FFT helpers ----------
@@ -199,7 +206,7 @@ class NowPlaying:
 
 # ---------- Main window ----------
 class VinylWindow:
-    def __init__(self, device_index):
+    def __init__(self, microphone):
         self.root = tk.Tk()
         self.root.title("Vinyl")
         self.root.overrideredirect(True)
@@ -232,7 +239,7 @@ class VinylWindow:
         close_btn.bind("<Button-1>", lambda e: self._on_close())
 
         self.audio = AudioCapture()
-        self.audio.start(device_index)
+        self.audio.start(microphone)
 
         self.now_playing = NowPlaying()
         if WINRT_OK:
@@ -384,8 +391,10 @@ def make_tray_icon():
 
 
 def main():
-    REALTEK_LOOPBACK_INDEX = 14
-    win = VinylWindow(device_index=REALTEK_LOOPBACK_INDEX)
+    microphone = pick_loopback_device()
+    if microphone is None:
+        raise RuntimeError("No audio loopback devices were found.")
+    win = VinylWindow(microphone=microphone)
 
     def on_toggle(icon, item):
         win.root.after(0, win.toggle)
@@ -402,9 +411,7 @@ def main():
                 win.audio.stop()
             except Exception:
                 pass
-            p_temp = pyaudio.PyAudio()
-            chosen = pick_loopback_device(p_temp)
-            p_temp.terminate()
+            chosen = pick_loopback_device()
             if chosen is None:
                 return
             win.audio = AudioCapture()
